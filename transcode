@@ -1,0 +1,299 @@
+#!/bin/bash
+#
+# rafi@binokular.net
+
+INPATH=/mnt/tvuploads
+OUTPATH=/mnt/tv/compressed
+TMPPATH=/mnt/tv/tmp
+LOGPATH=/home/bino/var/log/tv
+PROCPATH=/mnt/tv/processed
+
+FILEID=jog-transcode-backup-2
+
+FFMPEG=/usr/bin/ffmpeg
+
+PRESET=faster
+#CPUCORE=8
+CPUCORE=2
+
+VIDEOBITRATE=512k
+AUDIOBITRATE=128k
+
+APIURL="http://172.20.16.21/scanning-api/rf.php"
+
+CURL=/usr/bin/curl
+
+# End of conf
+
+
+[ -x $FFMPEG ] || exit 1
+
+[ -x $CURL ] || exit 1
+
+if ! [ -w $OUTPATH ]; then
+  mkdir -p $OUTPATH
+fi
+
+if ! [ -w $TMPPATH ]; then
+  mkdir -p $TMPPATH
+fi
+
+if ! [ -w $INPATH ] || ! [ -w $OUTPATH ] || ! [ -w $LOGPATH ] || ! [ -w $TMPPATH ]; then
+  exit 1
+fi
+
+#if ! [ -r $PRESET ]; then
+#  exit 1
+#fi
+
+LOCKFILE="$LOGPATH/TRANSCODE.lock"
+
+if [ -e $LOCKFILE ]; then
+  exit 1
+else
+  echo $$ > $LOCKFILE
+  echo "$(date +"%s") $(date '+%H:%M:%S') ----- START -----"
+fi
+
+declare -A TMPMYMAP1
+declare -A TMPMYMAP2
+declare -A SORTFILES1
+declare -A FILES
+
+OLDIFS=$IFS
+IFS=$'\n'
+FILES1=($(ls -1t $INPATH/*.mp4 $INPATH/*.mpg $INPATH/*.ts $INPATH/*.TS $INPATH/*.mkv  2> /dev/null))
+IFS=$OLDIFS
+
+NUM=0
+for TMPFILE in "${FILES1[@]}"; do
+  FILLER=$(echo $TMPFILE |  awk '{A=gsub(/_/,X,$0)}END {print A}')-
+  SLICE0=$(echo $TMPFILE | cut -c 1-22)
+  SLICE1=$(echo $TMPFILE | cut -d '_' -f $FILLER)${SLICE0}
+  TMPMYMAP1[$SLICE1]=$TMPFILE
+  TMPMYMAP2[$NUM]=$SLICE1
+  NUM=$((NUM+1))
+done
+
+SORTFILES1=$(
+for k in "${!TMPMYMAP2[@]}"; do
+  echo ${TMPMYMAP2["$k"]}
+done |
+sort -n)
+
+SAVEIFS=$IFS   # Save current IFS
+IFS=$'\n'      # Change IFS to new line
+SORTFILES2=($SORTFILES1) # split to array $names
+IFS=$SAVEIFS   # Restore IFS
+
+X=0
+for f in "${SORTFILES2[@]}"; do
+  FILES[${X}]=${TMPMYMAP1["${f}"]}
+  X=$((X+1))
+done
+
+#for FILE in "${FILES[@]}"; do
+for ((i=0; i < ${#FILES[@]}; i++)); do
+
+  #  RND=$RANDOM
+  OUTFILE="$(echo ${FILES[${i}]} | awk -F'/' '{print $NF}')"
+
+  #  if [ -e "$OUTPATH/$OUTFILE.mp4" ]; then
+  #    echo "$(date '+%H:%M:%S') Output file $OUTPATH/$OUTFILE.mp4 already exist. Deleting raw file."
+  #    rm -f "${FILES[${i}]}"
+  #    continue
+  #  fi
+
+  CHKSIZEX1=$(wc -c "${FILES[${i}]}" 2> /dev/null)
+  EXITCODE=$?
+  if [ $EXITCODE -ne 0 ]; then
+    echo "$(date +"%s") $(date '+%H:%M:%S') Skipping ${FILES[${i}]}, wc not found."
+    continue
+  fi
+  CHKSIZE1=$(echo $CHKSIZEX1 | awk '{print $1}')
+
+  sleep 10;
+
+  CHKSIZEX2=$(wc -c "${FILES[${i}]}" 2> /dev/null)
+  EXITCODE=$?
+  if [ $EXITCODE -ne 0 ]; then
+    echo "$(date +"%s") $(date '+%H:%M:%S') Skipping ${FILES[${i}]}, wc not found."
+    continue
+  fi
+  CHKSIZE2=$(echo $CHKSIZEX2 | awk '{print $1}')
+
+  if [ $CHKSIZE1 != $CHKSIZE2 ]; then
+    echo "$(date +"%s") $(date '+%H:%M:%S') Still copying ${FILES[${i}]}. Skipping."
+    continue
+  fi
+
+  BASEFILE=$(basename "${FILES[${i}]}" | awk -F'.' '{print $1}');
+
+  PYMD=${BASEFILE:(-14)}
+  PSTATION=$(echo ${BASEFILE%%$PYMD} | awk '{print tolower($0)}' )
+  PYEAR=${BASEFILE:(-13):4};
+  PMONTH=${BASEFILE:(-9):2};
+  PDAY=${BASEFILE:(-7):2};
+
+  PSPATH='unknown'
+  case "$PSTATION" in
+    'tv_one')
+      PSPATH='tvone'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'trans_7')
+      PSPATH='trans7'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'trans_tv')
+      PSPATH='transtv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'antv')
+      PSPATH='antv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'global_tv')
+      PSPATH='globaltv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'indosiar')
+      PSPATH='indosiar'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'jak_tv')
+      PSPATH='jaktv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'kompas_tv')
+      PSPATH='kompastv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'metro_tv')
+      PSPATH='metrotv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'mnc_tv')
+      PSPATH='mnctv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'rcti')
+      PSPATH='rcti'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'sctv')
+      PSPATH='sctv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'tvri_nasional')
+      PSPATH='tvrinasional'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'daai_tv')
+      PSPATH='daai_tv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'net_tv')
+      PSPATH='nettv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'net')
+      PSPATH='nettv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'bloomberg_tv_indonesia')
+      PSPATH='bloombergid'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'bloomberg_tv')
+      PSPATH='bloombergid'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'beritasatu')
+      PSPATH='beritasatu'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'berita_satu')
+      PSPATH='beritasatu'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'mnc_business')
+      PSPATH='mncbusiness'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'rtv')
+      PSPATH='rtv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'sindotv')
+      PSPATH='sindotv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'ibcm_channel')
+      PSPATH='ibcmchannel'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'inewstv')
+      PSPATH='inewstv'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'cnn_indonesia')
+      PSPATH='cnn_indonesia'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'mnc_news')
+      PSPATH='mncnews'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'jtv_surabaya')
+      PSPATH='jtv_surabaya'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'idx_channel')
+      PSPATH='idx_channel'/$PYEAR/$PMONTH/$PDAY
+      ;;
+    'cnbc_indonesia')
+      PSPATH='cnbc_indonesia'/$PYEAR/$PMONTH/$PDAY
+      ;;
+  esac
+
+  if ! [ -w "$OUTPATH/$PSPATH" ]; then
+    mkdir -p "$OUTPATH/$PSPATH"
+    if ! [ -w "$OUTPATH/$PSPATH" ]; then
+      echo "$(date +"%s") $(date '+%H:%M:%S') Error while creating subdir $OUTPATH/$PSPATH. Leaving."
+      exit 1
+    fi
+  fi
+  
+  # transcoding
+
+  OLDIFS=$IFS
+  IFS=$'\n'
+  PROCESSINGFILES=($(cat "$PROCPATH"/*.running 2> /dev/null))
+  IFS=$OLDIFS
+
+  for PROCESSING in "${PROCESSINGFILES[@]}"; do
+    if [ "$PROCESSING" == "${FILES[${i}]}" ] ; then
+      echo "$(date +"%s") $(date '+%H:%M:%S') Still processing ${FILES[${i}]}. Skipping."
+      continue 2
+    fi
+  done
+
+  FILE_SIZE=($(du -h "${FILES[${i}]}" | awk '{print $1}' 2> /dev/null))
+  echo "$(date +"%s") $(date '+%H:%M:%S') Start transcoding ${FILES[${i}]}, size $FILE_SIZE"
+
+  echo "${FILES[${i}]}" > "$PROCPATH/$FILEID.running"
+
+  # using avconv debian official
+  #  $FFMPEG -loglevel quiet -i "${FILES[${i}]}" -threads $CPUCORE -vcodec libx264 -preset "$PRESET" -b:v $VIDEOBITRATE -acodec aac -strict experimental -b:a $AUDIOBITRATE "$TMPPATH/$OUTFILE.$RND.mp4" > /dev/null 2>&1
+
+  # using avconv -> ffmpeg deb-multimedia
+  #$FFMPEG -loglevel quiet -i "${FILES[${i}]}" -threads $CPUCORE -vcodec libx264 -preset "$PRESET" -b:v $VIDEOBITRATE -acodec libfaac -b:a $AUDIOBITRATE "$TMPPATH/$OUTFILE.mp4" > /dev/null 2>&1
+
+  # using aac
+  $FFMPEG -loglevel quiet -i "${FILES[${i}]}" -threads $CPUCORE -vcodec libx264 -preset "$PRESET" -b:v $VIDEOBITRATE -b:a $AUDIOBITRATE -strict -2 "$TMPPATH/$OUTFILE.mp4" > /dev/null 2>&1
+
+  EXITCODE=$?
+  if [ $EXITCODE -ne 0 ]; then
+    echo "$(date +"%s") $(date '+%H:%M:%S') Done transcoding ${FILES[${i}]} with bad exit code. Skipping."
+    rm -f "$TMPPATH/$OUTFILE.mp4"
+    continue
+  fi
+
+  echo "$(date +"%s") $(date '+%H:%M:%S') Done transcoding ${FILES[${i}]} to $TMPPATH/$OUTFILE.mp4"
+  echo "$(date +"%s") $(date '+%H:%M:%S') Moving to $OUTPATH/$PSPATH/$OUTFILE.mp4"
+  mv "$TMPPATH/$OUTFILE.mp4" "$OUTPATH/$PSPATH/$OUTFILE.mp4"
+
+  #echo "$(date +"%s") $(date '+%H:%M:%S') Sending to API"
+  #RESPONSE=$($CURL -s -d "action=save&file_name=$OUTPATH/$PSPATH/$OUTFILE.mp4&host_origin=$FILEID" $APIURL)
+  #echo "$(date +"%s") $(date '+%H:%M:%S') API response: $RESPONSE"
+
+  echo "$OUTPATH/$PSPATH/$OUTFILE.mp4" >> "$PROCPATH/$FILEID.$(date '+%Y%m%d').processed"
+
+  echo "$(date +"%s") $(date '+%H:%M:%S') Removing ${FILES[${i}]}"
+  rm -f "${FILES[${i}]}"
+
+  rm -f "$PROCPATH/$FILEID.running"
+  
+done
+
+rm -f "$INPATH/*.sfk"
+rm -f "$LOCKFILE"
+echo "$(date +"%s") $(date '+%H:%M:%S') Have a nice day."
+echo "$(date +'%s') $(date '+%H:%M:%S') ----- END -----"
+
+
+exit 0
+# EOF
