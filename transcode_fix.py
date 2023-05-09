@@ -1,4 +1,5 @@
-import os, glob, ffmpeg
+import os, glob
+import ffmpeg
 import datetime as dt
 
 INPATH = "/home/virgiawan/BINO/TRANSCODE__/raw"
@@ -14,6 +15,12 @@ CPUCORE = 2
 VIDEOBITRATE = "512k"
 AUDIOBITRATE = "128k"
 
+TMPMYMAP1 = {}
+TMPMYMAP2 = {}
+SORTFILES1 = {}
+FILES = {}
+
+
 # line 37-49
 # if OUTPATH is not None:
 #     os.mkdir(OUTPATH)
@@ -28,25 +35,33 @@ FILES1 = (os.listdir(anu), glob.glob("*.mp4"))
 
 
 def run_proc():
-    for TMPFILE in FILES1:
-        INFILE = ffmpeg.input(TMPFILE)
-        SPLITNAME = (os.path.basename, os.path.splitext(TMPFILE))[0]
-        BASENAME = f"{OUTPATH}{SPLITNAME}.mp4"
-        OUTFILE = ffmpeg.output(
-            INFILE,
-            BASENAME,
-            loglevel="quiet",
-            vcodec="libx264",
-            preset=f"{PRESET}",
-            threads=f"{CPUCORE}",
-            vb=f"{VIDEOBITRATE}",
-            ab=f"{AUDIOBITRATE}",
-            strict=2,
-        )
+    try:
+        for TMPFILE in FILES1:
+            for VIDEO in TMPFILE:
+                INFILE = ffmpeg.input(VIDEO)
+                BASENAME = os.path.basename(VIDEO)
+                OUTFILE = ffmpeg.output(
+                    INFILE,
+                    # OUTPATH,
+                    f"{OUTPATH}{BASENAME}",
+                    loglevel="quiet",
+                    vcodec="libx264",
+                    preset=f"{PRESET}",
+                    threads=f"{CPUCORE}",
+                    vb=f"{VIDEOBITRATE}",
+                    ab=f"{AUDIOBITRATE}",
+                    strict=2,
+                )
+                # print(BASENAME)
 
-        ffmpeg.run(OUTFILE)
-        print(dt.datetime.now(), "--- START ---")
-        print(TMPFILE)
+                ffmpeg.run(OUTFILE)
+                print(dt.datetime.now(), "--- START ---")
+
+    except ffmpeg.Error as e:
+        print("stdout FFMpeg Error")
+        print(e.stdout)
+        print("stderr FFMpeg Error")
+        print(e.stderr)
 
 
 run_proc()
