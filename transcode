@@ -30,14 +30,20 @@ CURL=/usr/bin/curl
 
 [ -x $CURL ] || exit 1
 
+# if 'outpath' not exist, create it
+# --p, --parents     no error if existing, make parent directories as needed,
+#                    with their file modes unaffected by any -m option.
+
 if ! [ -w $OUTPATH ]; then
   mkdir -p $OUTPATH
 fi
 
+# if 'tmppath' not exist, create it
 if ! [ -w $TMPPATH ]; then
   mkdir -p $TMPPATH
 fi
 
+# if inpath or outpath or logpath or tmppath not exist then pass >> || << or
 if ! [ -w $INPATH ] || ! [ -w $OUTPATH ] || ! [ -w $LOGPATH ] || ! [ -w $TMPPATH ]; then
   exit 1
 fi
@@ -46,6 +52,8 @@ fi
 #  exit 1
 #fi
 
+
+# mark run process per file berdasarkan log
 LOCKFILE="$LOGPATH/TRANSCODE.lock"
 
 if [ -e $LOCKFILE ]; then
@@ -60,10 +68,33 @@ declare -A TMPMYMAP2
 declare -A SORTFILES1
 declare -A FILES
 
+
+#Potongan kode ini memuat beberapa perintah di shell script. Tujuannya adalah untuk menyimpan daftar file video dalam array FILES1, yang diurutkan berdasarkan tanggal modifikasi terbaru dari yang terbaru ke yang terlama. Berikut adalah kode Python yang setara:
 OLDIFS=$IFS
 IFS=$'\n'
 FILES1=($(ls -1t $INPATH/*.mp4 $INPATH/*.mpg $INPATH/*.ts $INPATH/*.TS $INPATH/*.mkv  2> /dev/null))
 IFS=$OLDIFS
+
+## _________________________________________________________##
+# potongan kode tersebut merupakan sebuah loop for di dalam shell script. Tujuannya adalah untuk memproses setiap elemen dalam array FILES1 dan membuat dua set map, yaitu TMPMYMAP1 dan TMPMYMAP2. Berikut adalah penjelasan baris per baris dari kode tersebut:
+
+# NUM=0: Inisialisasi variabel NUM dengan nilai 0.
+
+#for TMPFILE in "${FILES1[@]}"; do: Loop untuk memproses setiap elemen dalam array FILES1. Variabel TMPFILE akan berisi path dari setiap file yang ditemukan.
+
+# FILLER=$(echo $TMPFILE | awk '{A=gsub(/_/,X,$0)}END {print A}')-: Variabel FILLER akan mengandung jumlah garis bawah _ dalam nama file ditambah satu dan diikuti dengan tanda -. Garis bawah tersebut akan dihapus dari nama file menggunakan perintah gsub dalam awk dan hasil penghitungan garis bawah tersebut disimpan dalam variabel A. Hasil akhir kemudian di print pada bagian akhir dengan menggunakan END {print A}.
+
+# SLICE0=$(echo $TMPFILE | cut -c 1-22): Variabel SLICE0 akan mengandung 22 karakter pertama dari nama file.
+
+# SLICE1=$(echo $TMPFILE | cut -d '_' -f $FILLER)${SLICE0}: Variabel SLICE1 akan mengandung nama file tanpa garis bawah _ dan dengan 22 karakter pertama dari nama file pada variabel SLICE0. Perintah cut digunakan untuk memotong nama file pada garis bawah _ dan hanya menyimpan potongan yang sesuai dengan nilai FILLER.
+
+# TMPMYMAP1[$SLICE1]=$TMPFILE: Memasukkan mapping antara SLICE1 dan TMPFILE pada array asosiatif TMPMYMAP1.
+
+# TMPMYMAP2[$NUM]=$SLICE1: Memasukkan mapping antara NUM dan SLICE1 pada array TMPMYMAP2.
+
+# NUM=$((NUM+1)): Menambahkan nilai NUM sebesar 1 pada setiap iterasi loop.
+
+# Ringkasnya, kode tersebut akan menghasilkan dua set map, yaitu TMPMYMAP1 dan TMPMYMAP2. TMPMYMAP1 adalah map dari SLICE1 ke TMPFILE, sedangkan TMPMYMAP2 adalah map dari NUM ke SLICE1. Map ini akan digunakan pada bagian selanjutnya dari script.
 
 NUM=0
 for TMPFILE in "${FILES1[@]}"; do
